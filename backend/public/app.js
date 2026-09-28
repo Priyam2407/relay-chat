@@ -4,7 +4,7 @@
   const USERNAME_RE = /^[a-zA-Z0-9_]{2,20}$/;
   const PAGE = 50;
 
-  const state = { username: null, messages: [], online: [], typing: [], hasMore: false, socket: null, receipts: {} };
+  const state = { username: null, messages: [], online: [], typing: [], hasMore: false, socket: null, receipts: {}, unread: 0, loaded: false };
 const reported = { delivered: 0, read: 0 };   // last values sent to the server
   const fresh = new Set();          // keys of messages that should animate in
   let typingTimer = null;
@@ -55,12 +55,32 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
     return body;
   }
 
-  function showError(text) {
+  let toastTimer;
+  function showError(text, ok = false) {
     const b = $('banner');
-    b.textContent = `${text} (click to dismiss)`;
+    b.textContent = text;
+    b.classList.toggle('ok', ok);
     b.hidden = false;
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => (b.hidden = true), 4500);
   }
   $('banner').onclick = () => ($('banner').hidden = true);
+
+  /* ---------- theme ---------- */
+  const THEME_KEY = 'relay.theme';
+  function applyTheme(t) {
+    document.documentElement.dataset.theme = t;
+    $('themeToggle').textContent = t === 'dark' ? '☀️' : '🌙';
+    document.querySelector('meta[name=theme-color]').content = t === 'dark' ? '#08161a' : '#0b1f24';
+  }
+  let savedTheme = null;
+  try { savedTheme = localStorage.getItem(THEME_KEY); } catch { /* ignore */ }
+  applyTheme(savedTheme || (window.matchMedia && matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'));
+  $('themeToggle').onclick = () => {
+    const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+    applyTheme(next);
+    try { localStorage.setItem(THEME_KEY, next); } catch { /* ignore */ }
+  };
 
   /* ---------- state updates ---------- */
   function upsert(msg) {
@@ -84,8 +104,15 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
   const scrollBottom = () => {
     const el = $('messages');
     el.scrollTop = el.scrollHeight;
-    $('newPill').hidden = true;
+    state.unread = 0;
+    updatePill();
   };
+  function updatePill() {
+    const el = $('messages');
+    const far = el.scrollHeight - el.scrollTop - el.clientHeight > 260;
+    $('newPill').hidden = !(state.unread > 0 || far);
+    $('newPill').textContent = state.unread > 0 ? `${state.unread} new message${state.unread > 1 ? 's' : ''} ↓` : '↓';
+  }
 
   function renderMessages({ stick = false, quiet = false } = {}) {
     const box = $('messages');
@@ -93,7 +120,7 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
     const wasNear = nearBottom();
     const list = $('list');
     list.textContent = '';
-    let lastDay = '';
+    let lastDay = '', prev = null;
     const frag = document.createDocumentFragment();
 
     for (const m of state.messages) {
@@ -102,18 +129,25 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
         const d = document.createElement('div');
         d.className = 'day';
         d.textContent = day;
-        d.style.display = 'table'; d.style.margin = '12px auto 6px';
         frag.appendChild(d);
         lastDay = day;
+        prev = null;
       }
       const own = m.username === state.username;
+      // consecutive messages from one person within 5 minutes are visually grouped
+      const grouped = prev && prev.username === m.username && new Date(m.createdAt) - new Date(prev.createdAt) < 5 * 60000;
+      prev = m;
+
       const row = document.createElement('div');
-      row.className = `row${own ? ' own' : ''}${m.status === 'sending' ? ' sending' : ''}${fresh.has(keyOf(m)) ? ' pop' : ''}`;
-      if (!own) row.appendChild(avatar(m.username, false));
+      row.className = `row${own ? ' own' : ''}${grouped ? ' grouped' : ''}${m.status === 'sending' ? ' sending' : ''}${fresh.has(keyOf(m)) ? ' pop' : ''}`;
+      if (!own) {
+        if (grouped) { const sp = document.createElement('div'); sp.className = 'avatar-spacer'; row.appendChild(sp); }
+        else row.appendChild(avatar(m.username, false));
+      }
 
       const bubble = document.createElement('div');
       bubble.className = 'bubble';
-      if (!own) {
+      if (!own && !grouped) {
         const a = document.createElement('span');
         a.className = 'author';
         a.style.color = colorOf(m.username);
@@ -129,7 +163,7 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
       if (m.status === 'failed') {
         const b = document.createElement('button');
         b.className = 'retry';
-        b.textContent = 'Not sent. Click to retry';
+        b.textContent = 'Not sent. Tap to retry';
         b.onclick = () => retry(m.clientId);
         meta.appendChild(b);
       } else {
@@ -151,13 +185,14 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
     list.appendChild(frag);
     fresh.clear();
 
-    $('empty').hidden = state.messages.length > 0;
+    $('skeleton').hidden = state.loaded;
+    $('empty').hidden = !state.loaded || state.messages.length > 0;
     $('loadOlder').hidden = !state.hasMore;
 
     if (quiet) { box.scrollTop = prevTop; return; }   // receipt updates must not move the view
     const last = state.messages[state.messages.length - 1];
     if (stick || wasNear || (last && last.username === state.username)) scrollBottom();
-    else $('newPill').hidden = false;
+    else updatePill();
   }
 
   function renderOnline() {
@@ -182,7 +217,13 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
 
   function renderTyping() {
     const n = state.typing.length;
-    $('typing').textContent = n === 0 ? '' : n === 1 ? `${state.typing[0]} is typing…` : `${n} people are typing…`;
+    const box = $('typing');
+    box.textContent = '';
+    if (!n) return;
+    const dots = document.createElement('span');
+    dots.className = 'dots';
+    dots.innerHTML = '<i></i><i></i><i></i>';
+    box.append(dots, n === 1 ? `${state.typing[0]} is typing` : `${n} people are typing`);
   }
 
   function setStatus(connected) {
@@ -227,6 +268,9 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
       reportSeen();
     } catch (e) {
       showError(e.message);
+    } finally {
+      state.loaded = true;
+      $('skeleton').hidden = true;
     }
   }
 
@@ -295,7 +339,10 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
     socket.on('connect', () => { setStatus(true); $('banner').hidden = true; loadHistory({ stick: false }); });
     socket.on('disconnect', () => { state.typing = []; renderTyping(); setStatus(false); });
     socket.on('connect_error', (e) => { setStatus(false); showError(e.message || 'Connection failed.'); });
-    socket.on('message:new', (msg) => { upsert(msg); renderMessages(); reportSeen(); });
+    socket.on('message:new', (msg) => {
+      if (msg.username !== state.username && !nearBottom()) state.unread++;
+      upsert(msg); renderMessages(); reportSeen();
+    });
     socket.on('receipts:update', (r) => { state.receipts[r.username] = r; renderMessages({ quiet: true }); });
     socket.on('presence:update', (list) => { state.online = list; renderOnline(); setStatus(socket.connected); });
     socket.on('typing:update', ({ username, isTyping: t }) => {
@@ -346,6 +393,7 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
   function start(name) {
     state.username = name;
     $('meName').textContent = name;
+    $('meAvatar').replaceWith(Object.assign(avatar(name, true), { id: 'meAvatar' }));
     $('login').hidden = true;
     $('chat').hidden = false;
     renderOnline();
@@ -376,12 +424,53 @@ const reported = { delivered: 0, read: 0 };   // last values sent to the server
     location.reload();
   };
   $('newPill').onclick = scrollBottom;
-  $('messages').addEventListener('scroll', () => { if (nearBottom()) $('newPill').hidden = true; });
-  $('openSidebar').onclick = () => $('sidebar').classList.add('open');
-  $('closeSidebar').onclick = () => $('sidebar').classList.remove('open');
+  $('messages').addEventListener('scroll', () => { if (nearBottom()) state.unread = 0; updatePill(); });
+  const side = (open) => { $('sidebar').classList.toggle('open', open); $('backdrop').hidden = !open; };
+  $('openSidebar').onclick = () => side(true);
+  $('closeSidebar').onclick = () => side(false);
+  $('backdrop').onclick = () => side(false);
   window.addEventListener('beforeunload', stopTyping);
   window.addEventListener('focus', reportSeen);
   document.addEventListener('visibilitychange', reportSeen);
+
+  /* ---------- login preview ---------- */
+  const preview = (name) => {
+    const p = $('previewAvatar');
+    p.textContent = name ? name[0].toUpperCase() : '?';
+    p.style.background = name ? colorOf(name) : 'var(--muted)';
+    p.style.transform = name ? 'scale(1.06)' : 'scale(1)';
+  };
+  $('usernameInput').addEventListener('input', (e) => preview(e.target.value.trim()));
+  $('randomName').onclick = () => {
+    const a = ['Swift', 'Calm', 'Bright', 'Lucky', 'Brave', 'Quiet', 'Sunny', 'Witty'];
+    const b = ['Otter', 'Falcon', 'Panda', 'Tiger', 'Koala', 'Heron', 'Lynx', 'Fox'];
+    const pick = (l) => l[Math.floor(Math.random() * l.length)];
+    const name = `${pick(a)}${pick(b)}${Math.floor(Math.random() * 90 + 10)}`;
+    $('usernameInput').value = name;
+    $('usernameInput').dispatchEvent(new Event('input'));
+    $('usernameInput').focus();
+  };
+  preview('');
+
+  /* ---------- emoji picker ---------- */
+  const EMOJIS = '😀 😂 🥹 😍 😎 🤔 😅 😭 👍 👏 🙏 🔥 🎉 ❤️ ✨ 💯 👀 🙌 😴 🤝 🚀 ☕ 🍕 🌈'.split(' ');
+  EMOJIS.forEach((em) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = em;
+    b.setAttribute('aria-label', `Insert ${em}`);
+    b.onclick = () => {
+      const at = input.selectionStart ?? input.value.length;
+      input.value = input.value.slice(0, at) + em + input.value.slice(input.selectionEnd ?? at);
+      input.selectionStart = input.selectionEnd = at + em.length;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+    };
+    $('emojiPanel').appendChild(b);
+  });
+  $('emojiBtn').onclick = (e) => { e.stopPropagation(); $('emojiPanel').hidden = !$('emojiPanel').hidden; };
+  document.addEventListener('click', (e) => { if (!$('emojiPanel').contains(e.target)) $('emojiPanel').hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') { $('emojiPanel').hidden = true; side(false); } });
 
   let saved = null;
   try { saved = localStorage.getItem(KEY); } catch { /* ignore */ }
