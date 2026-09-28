@@ -3,54 +3,81 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Relay Chat</title>
+  <meta name="theme-color" content="#0b1f24">
+  <title>Relay · Live Chat</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;800&family=DM+Sans:wght@400;500;700&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+  <!-- ============ LOGIN ============ -->
   <section id="login" class="login">
-    <form id="loginForm" class="login-card" autocomplete="off">
+    <div class="hero" aria-hidden="true">
+      <div class="orb o1"></div><div class="orb o2"></div>
+      <h2>Talk in real time.<br>No refresh. No waiting.</h2>
+      <div class="demo">
+        <div class="demo-msg them">Is anyone here?</div>
+        <div class="demo-msg me">Just joined 👋</div>
+        <div class="demo-typing"><i></i><i></i><i></i></div>
+      </div>
+    </div>
+    <form id="loginForm" class="login-card" autocomplete="off" novalidate>
+      <div id="previewAvatar" class="avatar big">?</div>
       <h1>Relay</h1>
       <p>Pick a username to join the room.</p>
-      <input id="usernameInput" placeholder="Username" maxlength="20" autocapitalize="none" spellcheck="false" aria-label="Username">
+      <div class="field">
+        <input id="usernameInput" placeholder="Your username" maxlength="20" autocapitalize="none" spellcheck="false" aria-label="Username">
+        <button type="button" id="randomName" class="ghost" title="Suggest a name" aria-label="Suggest a name">🎲</button>
+      </div>
       <div id="loginError" class="field-error" role="alert"></div>
-      <button type="submit">Join chat</button>
+      <button type="submit" class="cta">Join chat <span aria-hidden="true">→</span></button>
+      <small>2–20 letters, numbers or underscores. No password needed.</small>
     </form>
   </section>
 
+  <!-- ============ CHAT ============ -->
   <main id="chat" class="chat" hidden>
-    <aside id="sidebar" class="sidebar">
+    <div id="backdrop" class="backdrop" hidden></div>
+    <aside id="sidebar" class="sidebar" aria-label="Online users">
       <header>
-        <h2>Online <span id="onlineCount">0</span></h2>
+        <h2>Online <span id="onlineCount" class="count">0</span></h2>
         <button id="closeSidebar" class="icon-btn only-mobile" aria-label="Close">✕</button>
       </header>
       <ul id="onlineList"></ul>
+      <footer class="me"><div id="meAvatar" class="avatar"></div><div><strong id="meName"></strong><small>You</small></div></footer>
     </aside>
 
     <section class="room">
       <header class="topbar">
         <button id="openSidebar" class="icon-btn only-mobile" aria-label="Show online users">☰</button>
         <div class="title">
-          <strong>Relay</strong>
+          <strong># general</strong>
           <span id="status" class="status"><i class="dot"></i><span id="statusText">Connecting…</span></span>
         </div>
-        <button id="logout" class="link-btn"><span id="meName"></span> · Leave</button>
+        <button id="themeToggle" class="icon-btn" aria-label="Toggle theme" title="Toggle theme">🌙</button>
+        <button id="logout" class="link-btn">Leave</button>
       </header>
-
-      <div id="banner" class="banner" hidden></div>
 
       <div id="messages" class="messages" aria-live="polite">
         <button id="loadOlder" class="pill" hidden>Load earlier messages</button>
-        <div id="empty" class="empty" hidden>No messages yet. Say hello.</div>
+        <div id="skeleton" class="skeleton" aria-hidden="true"><i></i><i class="r"></i><i></i><i class="r"></i></div>
+        <div id="empty" class="empty" hidden><div class="big-emoji">💬</div><strong>It's quiet in here</strong><span>Send the first message and start the conversation.</span></div>
         <div id="list"></div>
       </div>
-      <button id="newPill" class="pill new-pill" hidden>New messages ↓</button>
+      <button id="newPill" class="pill new-pill" hidden>↓</button>
+      <div id="banner" class="toast" role="status" hidden></div>
 
-      <div id="typing" class="typing"></div>
+      <div id="typing" class="typing" aria-live="polite"></div>
       <form id="composer" class="composer">
-        <textarea id="input" rows="1" maxlength="1000" placeholder="Write a message" aria-label="Message"></textarea>
+        <div id="emojiPanel" class="emoji-panel" hidden></div>
+        <button type="button" id="emojiBtn" class="icon-btn round" aria-label="Insert emoji">😊</button>
+        <textarea id="input" rows="1" maxlength="1000" placeholder="Write a message…" aria-label="Message"></textarea>
         <span id="counter" class="counter"></span>
-        <button id="sendBtn" type="submit" disabled>Send</button>
+        <button id="sendBtn" type="submit" class="send" disabled aria-label="Send message">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </button>
       </form>
     </section>
   </main>
