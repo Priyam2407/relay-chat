@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Relay Chat</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💬</text></svg>">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <section id="login" class="login">
+    <form id="loginForm" class="login-card" autocomplete="off">
+      <h1>Relay</h1>
+      <p>Pick a username to join the room.</p>
+      <input id="usernameInput" placeholder="Username" maxlength="20" autocapitalize="none" spellcheck="false" aria-label="Username">
+      <div id="loginError" class="field-error" role="alert"></div>
+      <button type="submit">Join chat</button>
+    </form>
+  </section>
+
+  <main id="chat" class="chat" hidden>
+    <aside id="sidebar" class="sidebar">
+      <header>
+        <h2>Online <span id="onlineCount">0</span></h2>
+        <button id="closeSidebar" class="icon-btn only-mobile" aria-label="Close">✕</button>
+      </header>
+      <ul id="onlineList"></ul>
+    </aside>
+
+    <section class="room">
+      <header class="topbar">
+        <button id="openSidebar" class="icon-btn only-mobile" aria-label="Show online users">☰</button>
+        <div class="title">
+          <strong>Relay</strong>
+          <span id="status" class="status"><i class="dot"></i><span id="statusText">Connecting…</span></span>
+        </div>
+        <button id="logout" class="link-btn"><span id="meName"></span> · Leave</button>
+      </header>
+
+      <div id="banner" class="banner" hidden></div>
+
+      <div id="messages" class="messages" aria-live="polite">
+        <button id="loadOlder" class="pill" hidden>Load earlier messages</button>
+        <div id="empty" class="empty" hidden>No messages yet. Say hello.</div>
+        <div id="list"></div>
+      </div>
+      <button id="newPill" class="pill new-pill" hidden>New messages ↓</button>
+
+      <div id="typing" class="typing"></div>
+      <form id="composer" class="composer">
+        <textarea id="input" rows="1" maxlength="1000" placeholder="Write a message" aria-label="Message"></textarea>
+        <span id="counter" class="counter"></span>
+        <button id="sendBtn" type="submit" disabled>Send</button>
+      </form>
+    </section>
+  </main>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
